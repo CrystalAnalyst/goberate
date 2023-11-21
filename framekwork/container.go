@@ -40,3 +40,24 @@ func (gobe *GobeContainer) GetProviderList() []string {
 }
 
 /*----为GobeContainer实现Container接口----*/
+func (gobe *GobeContainer) Bind(comer ServiceProvider) error {
+	gobe.lock.Lock()
+	name := comer.Name()
+	gobe.providers[name] = comer
+	gobe.lock.Unlock()
+	if comer.Is_defer() == false {
+		// 注册即实例化(必须返回一个可用的服务实例).
+		// 而服务实例需要先调用Boot完成参数、配置的初始化.
+		if err := comer.Boot(gobe); err != nil {
+			return err
+		}
+		param := comer.Params(gobe)
+		newInstanceFunc := comer.Register(gobe)
+		inst, err := newInstanceFunc(param...)
+		if err != nil {
+			// 实例化失败.
+		}
+		gobe.instances[name] = inst
+	}
+	return nil
+}
