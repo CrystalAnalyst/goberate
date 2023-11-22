@@ -66,19 +66,75 @@ func (gobe *GobeContainer) Bind(comer ServiceProvider) error {
 }
 
 func (gobe *GobeContainer) Is_bind(key string) bool {
-	if gobe.providers[key] != nil {
-		return true
-	} else {
-		return false
+	return (gobe.GetServiceProvider(key) != nil)
+}
+
+func (gobe *GobeContainer) GetServiceProvider(key string) ServiceProvider {
+	gobe.lock.RLock()
+	defer gobe.lock.RUnlock()
+	if sp, ok := gobe.providers[key]; ok {
+		return sp
 	}
+	return nil
 }
 
 func (gobe *GobeContainer) GetService(key string) (interface{}, error) {
-	/*--在服务容器中用key(代表着服务名)获取对应的服务--*/
+	return gobe.GetServiceInstance(key, nil, false)
 }
 
-func (gobe *GobeContainer) MustGetService(key string) interface{
-	/*----*/
+func (gobe *GobeContainer) MustGetService(key string) interface{} {
+	inst, err := gobe.GetServiceInstance(key, nil, false)
+	if err == nil {
+		return inst
+	} else {
+		panic("Get Service failure!")
+	}
 }
 
-func (gobe *GobeContainer) GetServiceByParams(key string, params []any) (interface{}, error)
+func (gobe *GobeContainer) NewService(key string, params []any) (interface{}, error) {
+	return gobe.GetServiceInstance(key, nil, true)
+}
+
+func (gobe *GobeContainer) GetServiceInstance(key string, params []any, force bool) (interface{}, error) {
+	/*
+		@params:
+		key: 通过key得知服务的名字,用key去拿到sp,然后用于实例化服务.
+		params: 用于在实例化服务时加入额外的参数.
+		force: 是否需要强制重新实例化.
+	*/
+	gobe.lock.RLock()
+	defer gobe.lock.RUnlock()
+	sp := gobe.GetServiceProvider(key)
+	if sp == nil {
+		return nil, errors.New("contract" + key + "has not registerded yet")
+	}
+
+	if force == true {
+		return gobe.newInstance(sp, params)
+	}
+
+	if inst, ok := gobe.instances[key]; ok {
+		return inst, nil
+	}
+
+	inst, err := gobe.newInstance(sp, params)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+	return inst, nil
+}
+
+func (gobe *GobeContainer) newInstance(sp ServiceProvider, params []any) (interface{}, error) {
+	if err := sp.Boot(gobe); err != nil {
+		return nil, errors.New(err.Error())
+	}
+	if params == nil {
+		params = sp.Params(gobe)
+	}
+	method := sp.Register(gobe)
+	inst, err := method(params)
+	if err != nil {
+		return nil, errors.New(err.Error())
+	}
+	return inst, nil
+}
